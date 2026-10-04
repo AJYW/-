@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作者卡密管理后台</title>
+    <style>
+        :root { --primary: #6750A4; --bg: #F7F2FA; --surface: #FFFFFF; --text: #1D1B20; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 600px; background: var(--surface); border-radius: 16px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        h1 { font-size: 1.5rem; margin-top: 0; color: var(--primary); text-align: center; }
+        
+        /* 作者操作区 */
+        .admin-panel { background: #EFE7F5; padding: 16px; border-radius: 12px; margin-bottom: 20px; }
+        .input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+        .input-row input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; }
+        .btn { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.8; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        .btn-danger { background: #B3261E; }
+        .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+        
+        /* 状态栏 */
+        .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .status-text { font-weight: bold; color: var(--primary); }
+        
+        /* 表格 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #eee; }
+        th { color: #666; font-weight: 500; font-size: 0.9rem; }
+        .card-code { font-family: monospace; font-size: 1.1rem; font-weight: bold; }
+        .buyer-name { color: #333; font-size: 0.95rem; }
+        .empty { text-align: center; color: #999; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔐 作者卡密管理后台</h1>
+    
+    <!-- 作者录入区 -->
+    <div class="admin-panel">
+        <p style="margin-top:0; font-size:0.9rem; color:#555;">收到用户付款后，在这里手动登记：</p >
+        <div class="input-row">
+            <input type="text" id="input-buyer" placeholder="买家昵称 (选填)">
+            <input type="text" id="input-code" placeholder="卡密 (如 VIP-8888)">
+        </div>
+        <div class="input-row">
+            <button class="btn" style="flex:1;" onclick="addCard()">➕ 手动添加</button>
+            <button class="btn" style="flex:1;" onclick="generateCard()">🎲 随机生成</button>
+        </div>
+    </div>
+
+    <!-- 状态和操作栏 -->
+    <div class="status-bar">
+        <span>当前记录：<span id="card-count" class="status-text">0</span> 条</span>
+        <button class="btn btn-sm btn-outline" onclick="exportJSON()">📤 导出并覆盖云端</button>
+    </div>
+
+    <!-- 数据表格 -->
+    <table>
+        <thead>
+            <tr>
+                <th>卡密</th>
+                <th>买家</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="card-list">
+            <!-- 动态渲染 -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // 从浏览器本地存储中读取记录，如果没有就是空数组
+    let cards = JSON.parse(localStorage.getItem('cloud_cards')) || [];
+
+    // 渲染表格
+    function renderCards() {
+        const tbody = document.getElementById('card-list');
+        const countSpan = document.getElementById('card-count');
+        tbody.innerHTML = '';
+
+        if (cards.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty">还没有记录，请在左侧添加。</td></tr>';
+            countSpan.textContent = '0';
+            return;
+        }
+
+        cards.forEach((card, index) => {
+            const tr = document.createElement('tr');
+            const usedText = card.used ? '已使用' : '未使用';
+            const usedClass = card.used ? 'tag-used' : 'tag-active';
+
+            tr.innerHTML = `
+                <td class="card-code">${card.code}</td>
+                <td class="buyer-name">${card.buyer || '-'}</td>
+                <td><span class="tag ${usedClass}">${usedText}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCard(${index})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        countSpan.textContent = cards.length;
+    }
+
+    // 手动添加卡密
+    function addCard() {
+        const buyerInput = document.getElementById('input-buyer');
+        const codeInput = document.getElementById('input-code');
+        const buyer = buyerInput.value.trim() || '匿名';
+        const code = codeInput.value.trim();
+
+        if (!code) return alert("请输入卡密！");
+        if (cards.some(c => c.code === code)) return alert("该卡密已存在！");
+
+        cards.push({ 
+            code: code, 
+            buyer: buyer, 
+            used: false, 
+            created: new Date().toISOString() 
+        });
+        
+        buyerInput.value = '';
+        codeInput.value = '';
+        saveToLocal();
+        renderCards();
+        alert("✅ 卡密已登记！");
+    }
+
+    // 随机生成一个卡密并添加
+    function generateCard() {
+        const buyerInput = document.getElementById('input-buyer');
+        const buyer = buyerInput.value.trim() || '匿名';
+        
+        const randomStr = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const code = `VIP-${randomStr}`;
+        
+        cards.push({ 
+            code: code, 
+            buyer: buyer, 
+            used: false, 
+            created: new Date().toISOString() 
+        });
+        
+        buyerInput.value = '';
+        saveToLocal();
+        renderCards();
+        alert("✅ 已自动生成卡密： " + code);
+    }
+
+    // 删除记录
+    function deleteCard(index) {
+        if (confirm("确定要删除这条卡密记录吗？")) {
+            cards.splice(index, 1);
+            saveToLocal();
+            renderCards();
+        }
+    }
+
+    // 保存到浏览器本地（这样刷新网页数据不会丢）
+    function saveToLocal() {
+        localStorage.setItem('cloud_cards', JSON.stringify(cards));
+    }
+
+    // 导出并覆盖云端
+    function exportJSON() {
+        if (cards.length === 0) return alert("当前没有卡密记录，无需导出。");
+        
+        const dataStr = JSON.stringify(cards, null, 2);
+        const blob = new Blob([dataStr], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "cards.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        alert("📤 记录已导出为 cards.json！\n\n请去 GitHub 打开你的 cards.json 文件，点编辑，把全部内容替换成这个文件的内容，Commit 保存即可。");
+    }
+
+    // 初始化渲染
+    renderCards();
+</script>
+</body>
+</html>
